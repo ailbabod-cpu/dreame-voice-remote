@@ -128,6 +128,8 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
 .out .o-note { font-size: 12px; color: var(--muted); }
 .cmd .c-py { font-size: 12px; color: var(--muted); }
 .reply-link { margin-top: 10px; }
+.miclog summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+.miclog pre { margin: 8px 0 0; padding: 10px; background: var(--bg); border-radius: 8px; font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg); max-height: 220px; overflow: auto; }
 .phrase { display: flex; align-items: stretch; border-top: 1px solid var(--line); }
 .phrase .cmd { border-top: 0; flex: 1; min-width: 0; }
 .logbtn { flex: none; align-self: center; margin-right: 12px; padding: 8px 10px; font-size: 13px; border-radius: 8px; border: 1px solid var(--accent); background: none; color: var(--accent); font-weight: 600; }
@@ -174,7 +176,7 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
   </header>
 
   <details class="panel" open>
-    <summary>Voice settings</summary>
+    <summary>Voice settings · v3</summary>
     <div class="settings">
       <div class="field">
         <label for="voice">Chinese voice</label>
@@ -200,6 +202,10 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
         <div class="voice-status">Uses the phone microphone. Allow microphone access when asked, turn the volume up and keep the phone near the robot.</div>
       </div>
       <div class="warn" id="micWarn" hidden></div>
+      <details class="miclog">
+        <summary>Microphone log</summary>
+        <pre id="dbgBox">Tap Listen to robot, then speak or let the robot talk. Events appear here.</pre>
+      </details>
       <div class="field">
         <label for="rate">Speed <output id="rateOut">0.85×</output></label>
         <input type="range" id="rate" min="0.5" max="1.2" step="0.05" value="0.85">
@@ -501,6 +507,23 @@ function renderBuild(root) {
 /* ---------- listen to the robot (microphone + speech recognition) ---------- */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null, wantListen = false, listenUntil = 0, tickTimer = null, heard = [], restarts = 0;
+let pendingInterim = "";
+const dbgLines = [];
+function dbg(msg) {
+  const t = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  dbgLines.unshift(p(t.getMinutes()) + ":" + p(t.getSeconds()) + "  " + msg);
+  if (dbgLines.length > 16) dbgLines.length = 16;
+  const el = document.getElementById("dbgBox");
+  if (el) el.textContent = dbgLines.join("\n");
+  const bs = document.getElementById("barState");
+  if (bs && wantListen) bs.dataset.last = msg;
+}
+function flushInterim() {
+  const t = pendingInterim;
+  pendingInterim = "";
+  if (t) { dbg("using last partial text"); handleHeard(t); }
+}
 function listenOn() { return !!SR && $("#autoListen").checked; }
 function listenSecs() { return parseFloat($("#listenSecs").value) || 10; }
 function setListenBtn() { $("#listenBtn").textContent = wantListen ? "Stop listening" : "Listen to robot"; }
@@ -522,7 +545,7 @@ function startListening(seconds) {
   const tick = () => {
     const left = Math.ceil((listenUntil - Date.now()) / 1000);
     if (left <= 0) { stopListening(); return; }
-    $("#barState").textContent = "Listening… " + left + " s";
+    $("#barState").textContent = "Listening… " + left + " s" + ($("#barState").dataset.last ? " · " + $("#barState").dataset.last : "");
   };
   tick();
   tickTimer = setInterval(tick, 500);
@@ -531,18 +554,26 @@ function beginRec() {
   if (!wantListen) return;
   const r = new SR();
   rec = r;
-  r.lang = "zh-CN"; r.interimResults = true; r.continuous = true; r.maxAlternatives = 1;
+  r.lang = "zh-CN"; r.interimResults = true; r.continuous = false; r.maxAlternatives = 1;
+  r.onstart = () => dbg("microphone on");
+  r.onaudiostart = () => dbg("audio capture started");
+  r.onsoundstart = () => dbg("sound detected");
+  r.onspeechstart = () => dbg("speech detected");
+  r.onspeechend = () => dbg("speech ended");
+  r.onnomatch = () => dbg("heard sound but no words");
   r.onresult = (ev) => {
     let interim = "";
     for (let i = ev.resultIndex; i < ev.results.length; i++) {
       const res = ev.results[i];
       const t = (res[0] && res[0].transcript || "").trim();
       if (!t) continue;
-      if (res.isFinal) handleHeard(t); else interim += t;
+      dbg((res.isFinal ? "final: " : "partial: ") + t);
+      if (res.isFinal) { pendingInterim = ""; handleHeard(t); } else interim += t;
     }
-    if (interim) $("#barText").textContent = interim;
+    if (interim) { pendingInterim = interim; $("#barText").textContent = interim; }
   };
   r.onerror = (e) => {
+    dbg("error: " + e.error);
     if (e.error === "not-allowed" || e.error === "service-not-allowed") {
       stopListening(true);
       micProblem(window.isSecureContext
@@ -555,8 +586,10 @@ function beginRec() {
     else if (e.error !== "no-speech" && e.error !== "aborted") { micProblem("Speech recognition error.", e.error); }
   };
   r.onend = () => {
+    dbg("session ended");
+    flushInterim();
     if (rec !== r) return;
-    if (wantListen && Date.now() < listenUntil && restarts < 12) { restarts++; setTimeout(beginRec, 150); }
+    if (wantListen && Date.now() < listenUntil && restarts < 30) { restarts++; setTimeout(beginRec, 150); }
     else if (wantListen) stopListening();
   };
   try { r.start(); } catch (e) { /* already started */ }
@@ -565,7 +598,7 @@ function stopListening(silent) {
   const was = wantListen;
   wantListen = false;
   clearInterval(tickTimer); tickTimer = null;
-  if (rec) { const r = rec; rec = null; r.onend = () => {}; try { r.stop(); } catch (e) {} }
+  if (rec) { const r = rec; rec = null; r.onend = () => { dbg("session ended"); flushInterim(); }; try { r.stop(); } catch (e) {} }
   setListenBtn();
   if (!silent && was) $("#barState").textContent = heard.length ? "Done listening" : "Nothing heard";
 }
