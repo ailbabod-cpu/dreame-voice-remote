@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#8a6a3c">
 <title>Dreame Voice Remote</title>
+<script src="https://cdn.jsdelivr.net/npm/pinyin-pro@3.28.1/dist/index.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Instrument+Sans:wght@400;500;600&display=swap">
 <style>
@@ -148,6 +149,8 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
 .log-zh { font-family: var(--font-zh); font-size: 18px; font-weight: 500; overflow-wrap: anywhere; }
 .log-item.robot .log-zh { color: var(--accent); }
 .log-py { font-size: 12px; color: var(--muted); }
+.log-links { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.log-links a, .o-link { font-size: 13px; color: var(--accent); font-weight: 600; }
 .log-en { font-size: 15px; font-weight: 600; }
 .bar-text .r { font-size: 13px; color: var(--accent); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -176,7 +179,7 @@ textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; 
   </header>
 
   <details class="panel" open>
-    <summary>Voice settings · v3</summary>
+    <summary>Voice settings · v4</summary>
     <div class="settings">
       <div class="field">
         <label for="voice">Chinese voice</label>
@@ -608,10 +611,13 @@ function handleHeard(t) {
   heard.push(n);
   if (n.includes(normZh(WAKE)) || n === normZh(lastCmd)) return; /* the phone's own voice */
   $("#barText").textContent = t;
+  const py0 = safePinyin(t);
+  const entry = logEntry({ role: "robot", zh: t, py: py0, en: "Translating…", src: "listen" });
+  const out = document.getElementById("trOut");
+  if (out) showOut(out, t, py0, "Translating…", "Heard from the robot");
   translateText(t).then((r) => {
-    logEntry({ role: "robot", zh: t, py: r.py || "", en: r.en, src: "listen" });
-    const out = document.getElementById("trOut");
-    if (out) showOut(out, t, r.py || "", r.en, "Heard from the robot · saved to log");
+    updateEntry(entry.id, { en: r.en, py: r.py || py0 });
+    if (out && document.body.contains(out)) showOut(out, t, r.py || py0, r.en, "Heard from the robot · saved to log");
   });
 }
 async function translateText(zh) {
@@ -622,20 +628,29 @@ async function translateText(zh) {
     if (n === pn) return { en: p.en, py: p.py, note: "From the built-in list" };
     if (n.includes(pn) && (!best || pn.length > normZh(best.zh).length)) best = p;
   }
+  const q = encodeURIComponent(zh);
+  const getJSON = async (url) => {
+    const ctl = new AbortController();
+    const tm = setTimeout(() => ctl.abort(), 7000);
+    try { const r = await fetch(url, { signal: ctl.signal }); return await r.json(); } finally { clearTimeout(tm); }
+  };
   try {
-    const r = await fetch("https://translate.googleapis.com/translate_a/single?client=gtx&sl=zh-CN&tl=en&dt=t&q=" + encodeURIComponent(zh));
-    const j = await r.json();
+    const j = await getJSON("https://translate.googleapis.com/translate_a/single?client=gtx&sl=zh-CN&tl=en&dt=t&q=" + q);
     const t = j[0].map((s) => s[0]).join("").trim();
-    if (t) return { en: t, note: "Translated online" };
-  } catch (e) { /* try the next service */ }
+    if (t) return { en: t, note: "Google Translate" };
+  } catch (e) { dbg("Google Translate failed: " + (e && e.message || e)); }
   try {
-    const r = await fetch("https://api.mymemory.translated.net/get?q=" + encodeURIComponent(zh) + "&langpair=zh-CN%7Cen");
-    const j = await r.json();
+    const j = await getJSON("https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=zh-CN&tl=en&q=" + q);
+    const first = Array.isArray(j) ? (Array.isArray(j[0]) ? j[0][0] : j[0]) : "";
+    if (first && typeof first === "string") return { en: first.trim(), note: "Google Translate" };
+  } catch (e) { dbg("Google Translate (2) failed: " + (e && e.message || e)); }
+  try {
+    const j = await getJSON("https://api.mymemory.translated.net/get?q=" + q + "&langpair=zh-CN%7Cen");
     const t = j && j.responseData && j.responseData.translatedText;
-    if (t && !/MYMEMORY WARNING/i.test(t)) return { en: t, note: "Translated online" };
-  } catch (e) { /* fall through */ }
+    if (t && !/MYMEMORY WARNING/i.test(t)) return { en: t, note: "MyMemory" };
+  } catch (e) { dbg("MyMemory failed: " + (e && e.message || e)); }
   if (best) return { en: best.en + " (partial match)", py: best.py, note: "From the built-in list" };
-  return { en: "(could not translate, check your internet)", note: "Failed" };
+  return { en: "(could not translate automatically, tap Open in Google Translate)", note: "Failed" };
 }
 function bindListen() {
   const a = $("#autoListen"), s = $("#listenSecs");
@@ -681,6 +696,22 @@ function logEntry(e) {
   } else {
     entries.unshift(entry); saveLocalLog(); afterLogChange();
   }
+  return entry;
+}
+function updateEntry(id, patch) {
+  if (logColl) { logColl.doc(id).update(patch).catch(() => {}); return; }
+  const e = entries.find((x) => x.id === id);
+  if (!e) return;
+  Object.assign(e, patch);
+  saveLocalLog(); afterLogChange();
+}
+function gtUrl(zh) { return "https://translate.google.com/?sl=zh-CN&tl=en&op=translate&text=" + encodeURIComponent(zh); }
+function safePinyin(zh) {
+  try { return window.pinyinPro ? window.pinyinPro.pinyin(zh) : ""; } catch (e) { return ""; }
+}
+function retryEntry(e) {
+  updateEntry(e.id, { en: "Translating…" });
+  translateText(e.zh).then((r) => updateEntry(e.id, { en: r.en, py: e.py || r.py || safePinyin(e.zh) }));
 }
 function removeEntry(id) {
   if (logColl) logColl.doc(id).delete().catch(() => {});
@@ -711,7 +742,7 @@ function renderLog() {
   entries.forEach((e) => {
     const it = document.createElement("div");
     it.className = "log-item " + (e.role === "robot" ? "robot" : "you");
-    it.innerHTML = '<div class="log-head"><span class="tag"></span><span class="tm"></span><span class="sp"></span><button type="button" class="x">Delete</button></div><div class="log-zh"></div><div class="log-py"></div><div class="log-en"></div>';
+    it.innerHTML = '<div class="log-head"><span class="tag"></span><span class="tm"></span><span class="sp"></span><button type="button" class="x">Delete</button></div><div class="log-zh"></div><div class="log-py"></div><div class="log-en"></div><div class="log-links"></div>';
     const tag = it.querySelector(".tag");
     tag.textContent = e.role === "robot" ? "Robot said" : "You said";
     if (e.role !== "robot") tag.classList.add("you");
@@ -719,6 +750,18 @@ function renderLog() {
     it.querySelector(".log-zh").textContent = e.zh;
     it.querySelector(".log-py").textContent = e.py || "";
     it.querySelector(".log-en").textContent = e.en || "";
+    if (e.role === "robot") {
+      const links = it.querySelector(".log-links");
+      const a = document.createElement("a");
+      a.href = gtUrl(e.zh); a.target = "_blank"; a.rel = "noopener"; a.textContent = "Open in Google Translate";
+      links.appendChild(a);
+      if (!e.en || /^\(could not|^Translating/.test(e.en)) {
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "x"; b.textContent = "Retry translation";
+        b.addEventListener("click", () => retryEntry(e));
+        links.appendChild(b);
+      }
+    }
     it.querySelector(".x").addEventListener("click", () => removeEntry(e.id));
     list.appendChild(it);
   });
@@ -761,7 +804,9 @@ function sayPlain(t) {
 }
 function showOut(el, zh, py, en, note) {
   el.hidden = false;
-  el.innerHTML = '<div class="o-zh"></div><div class="o-py"></div><div class="o-en"></div><div class="o-note"></div>';
+  el.innerHTML = '<div class="o-zh"></div><div class="o-py"></div><div class="o-en"></div><div class="o-note"></div><a class="o-link" target="_blank" rel="noopener">Open in Google Translate</a>';
+  const lk = el.querySelector(".o-link");
+  if (zh) lk.href = gtUrl(zh); else lk.hidden = true;
   el.querySelector(".o-zh").textContent = zh || "";
   el.querySelector(".o-py").textContent = py || "";
   el.querySelector(".o-en").textContent = en || "";
@@ -788,8 +833,8 @@ function renderReply(root) {
     if (!(window.claude && window.claude.use)) {
       showOut(out, text, "", "Translating…", "");
       const r = await translateText(text);
-      showOut(out, text, r.py || "", r.en, r.note + " · saved to log");
-      logEntry({ role: "robot", zh: text, py: r.py || "", en: r.en, src: "translate" });
+      showOut(out, text, r.py || safePinyin(text), r.en, r.note + " · saved to log");
+      logEntry({ role: "robot", zh: text, py: r.py || safePinyin(text), en: r.en, src: "translate" });
       return;
     }
     showOut(out, "", "", "Translating…", "");
