@@ -1,0 +1,929 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#8a6a3c">
+<title>Dreame Voice Remote</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Instrument+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one narrow column, tabs like the Dreame app, tap a row to speak it in Mandarin, fixed status bar at the bottom */
+:root {
+  --bg: #f3f1ee;
+  --surface: #ffffff;
+  --fg: #231f1a;
+  --muted: #6f665b;
+  --accent: #8a6a3c;
+  --accent-ink: #ffffff;
+  --accent-soft: #efe6d8;
+  --line: #e3ded7;
+  --warn-bg: #fbeed6;
+  --warn-fg: #6a4308;
+  --font-zh: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-ui: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #16140f; --surface: #211e18; --fg: #f0eadf; --muted: #a39a8c;
+    --accent: #c9a46c; --accent-ink: #1b1710; --accent-soft: #3a3226; --line: #34302a;
+    --warn-bg: #3b2f17; --warn-fg: #f1d9a6; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #16140f; --surface: #211e18; --fg: #f0eadf; --muted: #a39a8c;
+  --accent: #c9a46c; --accent-ink: #1b1710; --accent-soft: #3a3226; --line: #34302a;
+  --warn-bg: #3b2f17; --warn-fg: #f1d9a6; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0;
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-ui); font-size: 15px; line-height: 1.45;
+  padding-block: 20px 170px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+.zh { font-family: var(--font-zh); }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+header h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+header p { margin: 4px 0 0; color: var(--muted); }
+.wake { display: inline-flex; align-items: baseline; gap: 8px; margin-top: 10px; padding: 8px 12px; background: var(--accent-soft); border-radius: 8px; }
+.wake b { font-family: var(--font-zh); font-size: 20px; font-weight: 700; color: var(--accent); }
+.wake span { font-size: 12px; color: var(--muted); }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+details.panel > summary { list-style: none; padding: 12px 14px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+details.panel > summary::-webkit-details-marker { display: none; }
+details.panel > summary::after { content: "+"; color: var(--muted); font-size: 20px; line-height: 1; }
+details.panel[open] > summary::after { content: "–"; }
+.settings { padding: 0 14px 14px; display: grid; gap: 14px; }
+.field { display: grid; gap: 6px; min-width: 0; }
+.field label, .field .lab { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); display: flex; justify-content: space-between; }
+.field output { text-transform: none; letter-spacing: 0; color: var(--fg); font-variant-numeric: tabular-nums; }
+select, input[type="text"] {
+  width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg); color: var(--fg); font: inherit;
+}
+input[type="text"] { font-family: var(--font-zh); font-size: 17px; }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.check { display: flex; align-items: center; gap: 10px; }
+.check input { width: 20px; height: 20px; accent-color: var(--accent); }
+.voice-status { font-size: 13px; color: var(--muted); }
+.warn { background: var(--warn-bg); color: var(--warn-fg); padding: 10px 12px; border-radius: 8px; font-size: 13px; }
+.row-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn { padding: 10px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); font-weight: 500; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+
+.tabs { display: flex; gap: 4px; overflow-x: auto; border-bottom: 1px solid var(--line); scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab { flex: none; background: none; border: 0; border-bottom: 3px solid transparent; padding: 10px 12px 9px; text-align: center; }
+.tab .t-zh { display: block; font-family: var(--font-zh); font-weight: 500; font-size: 16px; }
+.tab .t-en { display: block; font-size: 11px; color: var(--muted); }
+.tab[aria-selected="true"] { border-bottom-color: var(--accent); }
+.tab[aria-selected="true"] .t-zh { font-weight: 700; color: var(--accent); }
+
+.group { padding-bottom: 4px; }
+.group + .group { margin-top: 16px; }
+.group h2 { margin: 0; padding: 12px 14px 8px; display: flex; align-items: baseline; gap: 8px; font-size: 13px; color: var(--muted); font-weight: 500; }
+.group h2 .zh { font-size: 16px; font-weight: 700; color: var(--fg); }
+.cmd {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  background: none; border: 0; border-top: 1px solid var(--line); padding: 11px 14px;
+}
+.cmd:active { background: var(--accent-soft); }
+.cmd.on { background: var(--accent-soft); }
+.mic { flex: none; width: 34px; height: 34px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; }
+.mic svg { width: 18px; height: 18px; }
+.cmd.on .mic { animation: pulse 1.1s ease-in-out infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--accent) 25%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .cmd.on .mic { animation: none; } }
+.cmd .txt { min-width: 0; display: grid; }
+.cmd .c-zh { font-family: var(--font-zh); font-size: 18px; font-weight: 500; color: var(--accent); overflow-wrap: anywhere; }
+.cmd .c-en { font-size: 13px; color: var(--muted); }
+
+.build { padding: 14px; display: grid; gap: 16px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { padding: 8px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); font-family: var(--font-zh); font-size: 16px; }
+.chip small { font-family: var(--font-ui); font-size: 11px; color: var(--muted); margin-left: 4px; }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.chip[aria-pressed="true"] small { color: inherit; opacity: 0.85; }
+.preview { font-family: var(--font-zh); font-size: 22px; font-weight: 500; color: var(--accent); min-height: 34px; overflow-wrap: anywhere; }
+.note { font-size: 13px; color: var(--muted); margin: 0; }
+
+.tr { padding: 14px; display: grid; gap: 12px; }
+textarea {
+  width: 100%; min-width: 0; min-height: 84px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg); color: var(--fg); font-family: var(--font-zh); font-size: 17px; resize: vertical;
+}
+textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.out { display: grid; gap: 4px; padding: 12px; background: var(--accent-soft); border-radius: 8px; }
+.out .o-zh { font-family: var(--font-zh); font-size: 20px; font-weight: 500; color: var(--accent); overflow-wrap: anywhere; }
+.out .o-py { color: var(--muted); font-size: 14px; }
+.out .o-en { font-size: 18px; font-weight: 600; }
+.out .o-note { font-size: 12px; color: var(--muted); }
+.cmd .c-py { font-size: 12px; color: var(--muted); }
+.reply-link { margin-top: 10px; }
+.phrase { display: flex; align-items: stretch; border-top: 1px solid var(--line); }
+.phrase .cmd { border-top: 0; flex: 1; min-width: 0; }
+.logbtn { flex: none; align-self: center; margin-right: 12px; padding: 8px 10px; font-size: 13px; border-radius: 8px; border: 1px solid var(--accent); background: none; color: var(--accent); font-weight: 600; }
+.log-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 14px 8px; }
+.log-top h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.log-count { font-size: 12px; color: var(--muted); }
+.log-actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 0 14px 12px; align-items: center; }
+.log-actions .btn { padding: 8px 12px; font-size: 14px; }
+.log-status { font-size: 12px; color: var(--muted); }
+.log-item { display: grid; gap: 2px; padding: 10px 14px; border-top: 1px solid var(--line); }
+.log-head { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.log-head .sp { flex: 1; }
+.tag { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; color: var(--accent); }
+.tag.you { color: var(--muted); }
+.x { background: none; border: 0; color: var(--muted); padding: 4px 6px; font-size: 12px; border-radius: 6px; }
+.log-zh { font-family: var(--font-zh); font-size: 18px; font-weight: 500; overflow-wrap: anywhere; }
+.log-item.robot .log-zh { color: var(--accent); }
+.log-py { font-size: 12px; color: var(--muted); }
+.log-en { font-size: 15px; font-weight: 600; }
+.bar-text .r { font-size: 13px; color: var(--accent); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  background: var(--surface); border-top: 1px solid var(--line);
+  padding-top: 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.bar-in { max-width: 560px; margin: 0 auto; display: grid; gap: 8px; }
+.bar-btns { display: grid; grid-template-columns: 1.5fr 1fr 1fr; gap: 8px; }
+.bar-btns .btn { padding: 11px 8px; }
+.bar-text { flex: 1; min-width: 0; }
+.bar-text .s { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.bar-text .p { font-family: var(--font-zh); font-size: 17px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Dreame Voice Remote</h1>
+    <p>Tap a command and the phone says it in Mandarin. Hold the phone speaker close to the robot.</p>
+    <div class="wake"><b class="zh">你好追觅</b><span>wake word · nǐ hǎo zhuī mì</span></div>
+    <div class="reply-link"><button class="btn" id="toReply" type="button">Robot answered? Translate it</button></div>
+  </header>
+
+  <details class="panel" open>
+    <summary>Voice settings</summary>
+    <div class="settings">
+      <div class="field">
+        <label for="voice">Chinese voice</label>
+        <select id="voice"><option value="">Auto (best Chinese voice)</option></select>
+        <div class="voice-status" id="voiceStatus">Looking for Chinese voices…</div>
+      </div>
+      <div class="check">
+        <input type="checkbox" id="wake" checked>
+        <label for="wake">Say the wake word 你好追觅 first</label>
+      </div>
+      <div class="field">
+        <label for="pause">Wait after wake word <output id="pauseOut">3.0 s</output></label>
+        <input type="range" id="pause" min="0" max="6" step="0.5" value="3">
+        <div class="voice-status">The phone listens for the robot's "我在" during this wait. 0 s says wake word and command as one sentence and skips that.</div>
+      </div>
+      <div class="check">
+        <input type="checkbox" id="autoListen" checked>
+        <label for="autoListen">Listen for the robot's reply automatically</label>
+      </div>
+      <div class="field">
+        <label for="listenSecs">Listening time after a command <output id="listenOut">10 s</output></label>
+        <input type="range" id="listenSecs" min="4" max="20" step="1" value="10">
+        <div class="voice-status">Uses the phone microphone. Allow microphone access when asked, turn the volume up and keep the phone near the robot.</div>
+      </div>
+      <div class="warn" id="micWarn" hidden></div>
+      <div class="field">
+        <label for="rate">Speed <output id="rateOut">0.85×</output></label>
+        <input type="range" id="rate" min="0.5" max="1.2" step="0.05" value="0.85">
+      </div>
+      <div class="row-btns">
+        <button class="btn" id="testBtn" type="button">Test voice</button>
+      </div>
+      <div class="warn" id="noVoice" hidden></div>
+    </div>
+  </details>
+
+  <div class="tabs" id="tabs" role="tablist" aria-label="Command groups"></div>
+  <div id="content"></div>
+</div>
+
+<div class="bar">
+  <div class="bar-in">
+    <div class="bar-text"><div class="s" id="barState">Ready</div><div class="p zh" id="barText">Pick a command</div><div class="r" id="barReply" hidden></div></div>
+    <div class="bar-btns">
+      <button class="btn primary" id="listenBtn" type="button">Listen to robot</button>
+      <button class="btn" id="replayBtn" type="button">Again</button>
+      <button class="btn" id="stopBtn" type="button">Stop</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const WAKE = "你好追觅";
+const MIC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
+
+const TABS = [
+  { id: "start", zh: "启动任务", en: "Start", groups: [
+    { zh: "全局清洁任务", en: "Whole home", cmds: [
+      { say: "开始清洁", en: "Start cleaning" },
+      { say: "开始扫拖", en: "Start sweep and mop" },
+      { say: "开始拖地", en: "Start mopping" },
+      { say: "开始扫地", en: "Start sweeping" } ] },
+    { zh: "区域清洁任务", en: "Rooms", cmds: [
+      { say: "去厨房清洁", en: "Go clean the kitchen" },
+      { say: "打扫一下卧室和客厅", en: "Clean bedroom and living room" } ] },
+    { zh: "家具区域清洁任务", en: "Around furniture", cmds: [
+      { say: "去桌子下面清洁一下", en: "Clean under the table" },
+      { say: "打扫一下沙发", en: "Clean the sofa area" } ] },
+    { zh: "局部清洁任务", en: "Spot clean", cmds: [
+      { say: "开始局部清洁", en: "Start spot cleaning" } ] },
+    { zh: "召唤清洁", en: "Call to me", cmds: [
+      { say: "到我这里来清洁", en: "Come clean where I am" } ] },
+    { zh: "快速建图", en: "Quick map", cmds: [
+      { say: "开始建图", en: "Start mapping" } ] }
+  ]},
+  { id: "stop", zh: "任务打断", en: "Interrupt", groups: [
+    { zh: "暂停", en: "Pause", cmds: [ { say: "暂停", show: "暂停（任务）", en: "Pause the task" } ] },
+    { zh: "继续", en: "Resume", cmds: [ { say: "继续", show: "继续（任务）", en: "Resume the task" } ] },
+    { zh: "结束", en: "End", cmds: [
+      { say: "返回充电", en: "Return to dock and charge" },
+      { say: "结束", show: "结束（任务）", en: "End the task" } ] },
+    { zh: "禁止清洁", en: "No-go", cmds: [ { say: "不要打扫主卧", en: "Don't clean the master bedroom" } ] }
+  ]},
+  { id: "dock", zh: "基站任务", en: "Base station", groups: [
+    { zh: "退出基站", en: "Leave dock", cmds: [ { say: "退出基站", en: "Leave the base station" } ] },
+    { zh: "洗拖布", en: "Wash mop", cmds: [ { say: "开始洗拖布", en: "Start washing the mop" } ] },
+    { zh: "集尘", en: "Dust collection", cmds: [ { say: "开始集尘", en: "Start emptying dust" } ] },
+    { zh: "烘干", en: "Dry", cmds: [ { say: "开始烘干", en: "Start drying the mop" } ] }
+  ]},
+  { id: "mode", zh: "模式调节", en: "Settings", groups: [
+    { zh: "吸力调节", en: "Suction", cmds: [
+      { say: "切换为标准吸力", en: "Switch to standard suction" },
+      { say: "增大吸力", en: "Increase suction" },
+      { say: "减小吸力", en: "Decrease suction" } ] },
+    { zh: "拖布湿度调节", en: "Mop wetness", cmds: [
+      { say: "拖布湿度切换为偏干", en: "Set mop to drier" },
+      { say: "增加拖布湿度", en: "More mop water" },
+      { say: "减小拖布湿度", en: "Less mop water" } ] },
+    { zh: "音量调节", en: "Robot volume", cmds: [
+      { say: "增加音量", en: "Volume up" },
+      { say: "减小音量", en: "Volume down" },
+      { say: "音量最大", en: "Volume max" },
+      { say: "音量最小", en: "Volume min" },
+      { say: "音量调节至80", en: "Set volume to 80" } ] }
+  ]},
+  { id: "move", zh: "运动控制", en: "Movement", groups: [
+    { zh: "旋转", en: "Rotate", cmds: [
+      { say: "向右转", en: "Turn right" },
+      { say: "向左转", en: "Turn left" } ] },
+    { zh: "行走", en: "Walk", cmds: [ { say: "向前走1米", en: "Move forward 1 metre" } ] }
+  ]},
+  { id: "other", zh: "其他", en: "Other", groups: [
+    { zh: "天气查询", en: "Weather", cmds: [ { say: "今天天气怎么样", en: "What's the weather today?" } ] },
+    { zh: "时间日期", en: "Date", cmds: [
+      { say: "今天几号", en: "What's the date today?" },
+      { say: "今天星期几", en: "What day is today?" } ] },
+    { zh: "计算器", en: "Calculator", cmds: [ { say: "1+1等于几", en: "What is 1+1?" } ] }
+  ]},
+  { id: "build", zh: "自定义", en: "Build your own", custom: true },
+  { id: "reply", zh: "机器人回复", en: "Robot replies", reply: true }
+];
+
+/* Typical robot wording. Exact phrases vary by model and firmware. */
+const PHRASES = [
+  { zh: "应答", en: "Answers", items: [
+    { zh: "我在", py: "wǒ zài", en: "I'm here (reply to the wake word)" },
+    { zh: "好的", py: "hǎo de", en: "OK" },
+    { zh: "收到", py: "shōu dào", en: "Got it" },
+    { zh: "抱歉，我没听清", py: "bào qiàn, wǒ méi tīng qīng", en: "Sorry, I didn't catch that" },
+    { zh: "抱歉，我还不会这个", py: "bào qiàn, wǒ hái bú huì zhè ge", en: "Sorry, I can't do that yet" } ] },
+  { zh: "状态提示", en: "Status messages", items: [
+    { zh: "开始清洁", py: "kāi shǐ qīng jié", en: "Starting to clean" },
+    { zh: "已暂停", py: "yǐ zàn tíng", en: "Paused" },
+    { zh: "已继续", py: "yǐ jì xù", en: "Resumed" },
+    { zh: "清洁完成", py: "qīng jié wán chéng", en: "Cleaning finished" },
+    { zh: "正在回充", py: "zhèng zài huí chōng", en: "Returning to charge" },
+    { zh: "开始洗拖布", py: "kāi shǐ xǐ tuō bù", en: "Starting to wash the mop" },
+    { zh: "开始烘干", py: "kāi shǐ hōng gān", en: "Starting to dry" } ] },
+  { zh: "需要你处理", en: "Needs your attention", items: [
+    { zh: "电量低，请充电", py: "diàn liàng dī, qǐng chōng diàn", en: "Battery low, please charge" },
+    { zh: "水箱缺水", py: "shuǐ xiāng quē shuǐ", en: "Water tank is empty" },
+    { zh: "集尘袋已满", py: "jí chén dài yǐ mǎn", en: "Dust bag is full" },
+    { zh: "我被困住了", py: "wǒ bèi kùn zhù le", en: "I'm stuck" },
+    { zh: "请检查拖布", py: "qǐng jiǎn chá tuō bù", en: "Please check the mop" } ] }
+];
+const ENMAP = {};
+TABS.forEach((t) => { if (t.groups) t.groups.forEach((g) => g.cmds.forEach((c) => { ENMAP[c.say] = c.en; })); });
+
+const TEMPLATES = [
+  { t: "去{r}清洁", en: "Go clean …" },
+  { t: "打扫一下{r}", en: "Clean …" },
+  { t: "不要打扫{r}", en: "Don't clean …" }
+];
+const ROOMS = [
+  { zh: "厨房", en: "Kitchen" }, { zh: "卧室", en: "Bedroom" }, { zh: "客厅", en: "Living room" },
+  { zh: "主卧", en: "Master bedroom" }, { zh: "卫生间", en: "Bathroom" }, { zh: "走廊", en: "Hallway" }
+];
+
+const $ = (s) => document.querySelector(s);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("dvr_" + k); return v === null ? d : v; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem("dvr_" + k, v); } catch (e) {} }
+};
+
+/* ---------- speech ---------- */
+const synth = window.speechSynthesis;
+let zhVoices = [];
+let seq = 0, timer = null, keep = null, lastCmd = "", nowText = "", listenAfter = false;
+
+function normLang(v) { return (v.lang || "").replace("_", "-"); }
+function loadVoices() {
+  if (!synth) return;
+  const all = synth.getVoices() || [];
+  zhVoices = all.filter((v) => /^(zh|cmn)/i.test(normLang(v)));
+  zhVoices.sort((a, b) => (normLang(b) === "zh-CN") - (normLang(a) === "zh-CN"));
+  const sel = $("#voice");
+  const saved = store.get("voice", "");
+  sel.innerHTML = '<option value="">Auto (best Chinese voice)</option>';
+  zhVoices.forEach((v) => {
+    const o = document.createElement("option");
+    o.value = v.name; o.textContent = v.name + " · " + normLang(v);
+    sel.appendChild(o);
+  });
+  if (saved && zhVoices.some((v) => v.name === saved)) sel.value = saved;
+  const st = $("#voiceStatus"), warn = $("#noVoice");
+  if (zhVoices.length) {
+    const v = pickVoice();
+    st.textContent = "Using: " + v.name + " (" + normLang(v) + ")";
+    warn.hidden = true;
+  } else {
+    st.textContent = "No Chinese voice listed by this browser.";
+    warn.hidden = false;
+    warn.textContent = "Without a Chinese voice the phone may read the text in the wrong language. On Android, open Settings > Text-to-speech output and install Chinese (China) in Google Speech Services, then reload this page.";
+  }
+}
+function pickVoice() {
+  const name = $("#voice").value;
+  return zhVoices.find((v) => v.name === name) || zhVoices[0] || null;
+}
+function makeUtter(text) {
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = "zh-CN";
+  u.rate = parseFloat($("#rate").value);
+  u.pitch = 1; u.volume = 1;
+  const v = pickVoice();
+  if (v) { u.voice = v; u.lang = normLang(v); }
+  return u;
+}
+function setNow(text, state) {
+  nowText = text || "";
+  $("#barState").textContent = state || "Ready";
+  if (text) $("#barText").textContent = text;
+  document.querySelectorAll(".cmd").forEach((b) => b.classList.toggle("on", !!text && state === "Speaking" && b.dataset.say === text));
+}
+function stopAll() {
+  seq++; clearTimeout(timer);
+  stopListening(true);
+  if (synth) synth.cancel();
+  setNow(nowText, "Stopped");
+}
+function runParts(parts, i, my, pauseMs, label) {
+  if (my !== seq) return;
+  const u = makeUtter(parts[i]);
+  keep = u;
+  u.onend = () => {
+    if (my !== seq) return;
+    if (i + 1 < parts.length) {
+      setNow(label, "Waiting for robot…");
+      if (listenOn()) startListening(pauseMs / 1000);
+      timer = setTimeout(() => { stopListening(true); setNow(label, "Speaking"); runParts(parts, i + 1, my, pauseMs, label); }, pauseMs);
+    } else {
+      setNow(label, "Done");
+      if (listenAfter && listenOn()) timer = setTimeout(() => { if (my === seq) startListening(listenSecs()); }, 400);
+    }
+  };
+  u.onerror = () => { if (my === seq) setNow(label, "Voice error"); };
+  synth.speak(u);
+}
+function speak(text) {
+  if (!synth) { setNow(text, "Speech not supported here"); return; }
+  stopAll();
+  const my = seq;
+  lastCmd = text;
+  const wake = $("#wake").checked;
+  const pause = parseFloat($("#pause").value);
+  const parts = !wake ? [text] : pause > 0 ? [WAKE, text] : [WAKE + "，" + text];
+  const label = wake ? WAKE + "，" + text : text;
+  listenAfter = true;
+  setNow(label, "Speaking");
+  logEntry({ role: "you", zh: text, en: ENMAP[text] || "" });
+  setTimeout(() => runParts(parts, 0, my, pause * 1000, label), 80);
+}
+
+/* ---------- UI ---------- */
+function cmdRow(c) {
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "cmd"; b.dataset.say = (c.say);
+  b.innerHTML = '<span class="mic">' + MIC + '</span><span class="txt"><span class="c-zh"></span><span class="c-en"></span></span>';
+  b.querySelector(".c-zh").textContent = c.show || c.say;
+  b.querySelector(".c-en").textContent = c.en;
+  b.addEventListener("click", () => speak(c.say));
+  return b;
+}
+let tabId = store.get("tab", "start");
+function renderTabs() {
+  const box = $("#tabs");
+  box.innerHTML = "";
+  TABS.forEach((t) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "tab"; b.setAttribute("role", "tab");
+    b.setAttribute("aria-selected", String(t.id === tabId));
+    b.innerHTML = '<span class="t-zh"></span><span class="t-en"></span>';
+    b.querySelector(".t-zh").textContent = t.zh;
+    b.querySelector(".t-en").textContent = t.en;
+    b.addEventListener("click", () => { tabId = t.id; store.set("tab", tabId); renderTabs(); renderContent(); });
+    box.appendChild(b);
+  });
+}
+const bld = { tpl: 0, rooms: new Set(["厨房"]) };
+function buildText() {
+  const picked = ROOMS.filter((r) => bld.rooms.has(r.zh)).map((r) => r.zh);
+  if (!picked.length) return "";
+  return TEMPLATES[bld.tpl].t.replace("{r}", picked.join("和"));
+}
+function renderBuild(root) {
+  const free = document.createElement("div");
+  free.className = "panel build";
+  free.innerHTML = '<div class="field"><label for="free">Any Chinese phrase</label><input type="text" id="free" placeholder="例如：开始清洁" autocomplete="off"></div><div class="row-btns"><button class="btn primary" type="button" id="freeGo">Speak it</button></div>';
+  root.appendChild(free);
+  free.querySelector("#freeGo").addEventListener("click", () => { const v = free.querySelector("#free").value.trim(); if (v) speak(v); });
+  free.querySelector("#free").addEventListener("keydown", (e) => { if (e.key === "Enter") { const v = e.target.value.trim(); if (v) speak(v); } });
+
+  const box = document.createElement("div");
+  box.className = "panel build";
+  box.style.marginTop = "16px";
+  box.innerHTML = '<div class="field"><span class="lab">1 · Action</span><div class="chips" id="tplChips"></div></div><div class="field"><span class="lab">2 · Rooms (pick one or more)</span><div class="chips" id="roomChips"></div></div><div class="field"><span class="lab">Command</span><div class="preview" id="prev"></div></div><div class="row-btns"><button class="btn primary" type="button" id="buildGo">Speak command</button></div><p class="note">Room commands only work for rooms that are set up on the robot\'s map in the Dreame app.</p>';
+  root.appendChild(box);
+  const prev = box.querySelector("#prev");
+  const upd = () => { prev.textContent = buildText() || "Pick at least one room"; };
+  const tc = box.querySelector("#tplChips");
+  TEMPLATES.forEach((t, i) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "chip"; b.setAttribute("aria-pressed", String(i === bld.tpl));
+    b.innerHTML = '<span></span><small></small>';
+    b.firstChild.textContent = t.t.replace("{r}", "…"); b.lastChild.textContent = t.en;
+    b.addEventListener("click", () => { bld.tpl = i; tc.querySelectorAll(".chip").forEach((x, j) => x.setAttribute("aria-pressed", String(j === i))); upd(); });
+    tc.appendChild(b);
+  });
+  const rc = box.querySelector("#roomChips");
+  ROOMS.forEach((r) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "chip"; b.setAttribute("aria-pressed", String(bld.rooms.has(r.zh)));
+    b.innerHTML = '<span></span><small></small>';
+    b.firstChild.textContent = r.zh; b.lastChild.textContent = r.en;
+    b.addEventListener("click", () => {
+      if (bld.rooms.has(r.zh)) bld.rooms.delete(r.zh); else bld.rooms.add(r.zh);
+      b.setAttribute("aria-pressed", String(bld.rooms.has(r.zh))); upd();
+    });
+    rc.appendChild(b);
+  });
+  box.querySelector("#buildGo").addEventListener("click", () => { const t = buildText(); if (t) speak(t); });
+  upd();
+}
+/* ---------- listen to the robot (microphone + speech recognition) ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, wantListen = false, listenUntil = 0, tickTimer = null, heard = [], restarts = 0;
+function listenOn() { return !!SR && $("#autoListen").checked; }
+function listenSecs() { return parseFloat($("#listenSecs").value) || 10; }
+function setListenBtn() { $("#listenBtn").textContent = wantListen ? "Stop listening" : "Listen to robot"; }
+function micProblem(msg, code) {
+  const w = $("#micWarn");
+  w.hidden = false;
+  w.textContent = msg + " [" + (code ? code + " · " : "") + location.protocol + " · " + (window.isSecureContext ? "secure" : "not secure") + "]";
+  $("#barState").textContent = "Microphone problem";
+  const d = document.querySelector("details.panel");
+  if (d) d.open = true;
+}
+function startListening(seconds) {
+  if (!SR) { micProblem("This browser has no speech recognition. Open the page in Chrome on Android."); return; }
+  stopListening(true);
+  wantListen = true; heard = []; restarts = 0;
+  listenUntil = Date.now() + seconds * 1000;
+  setListenBtn();
+  beginRec();
+  const tick = () => {
+    const left = Math.ceil((listenUntil - Date.now()) / 1000);
+    if (left <= 0) { stopListening(); return; }
+    $("#barState").textContent = "Listening… " + left + " s";
+  };
+  tick();
+  tickTimer = setInterval(tick, 500);
+}
+function beginRec() {
+  if (!wantListen) return;
+  const r = new SR();
+  rec = r;
+  r.lang = "zh-CN"; r.interimResults = true; r.continuous = true; r.maxAlternatives = 1;
+  r.onresult = (ev) => {
+    let interim = "";
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      const res = ev.results[i];
+      const t = (res[0] && res[0].transcript || "").trim();
+      if (!t) continue;
+      if (res.isFinal) handleHeard(t); else interim += t;
+    }
+    if (interim) $("#barText").textContent = interim;
+  };
+  r.onerror = (e) => {
+    if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+      stopListening(true);
+      micProblem(window.isSecureContext
+        ? "Microphone access was blocked. Allow the microphone for this page in the browser's site settings (lock icon or Site settings), and make sure Google voice typing is enabled on the phone, then tap Listen to robot again."
+        : "The microphone is blocked because this page was opened from storage instead of an https address. Chrome only allows speech recognition on secure pages.", e.error);
+    }
+    else if (e.error === "audio-capture") { stopListening(true); micProblem("No microphone was found.", e.error); }
+    else if (e.error === "network") { stopListening(true); micProblem("Speech recognition needs an internet connection.", e.error); }
+    else if (e.error === "language-not-supported") { stopListening(true); micProblem("This phone has no Chinese speech recognition. Install Chinese for Google voice typing in the phone's language settings.", e.error); }
+    else if (e.error !== "no-speech" && e.error !== "aborted") { micProblem("Speech recognition error.", e.error); }
+  };
+  r.onend = () => {
+    if (rec !== r) return;
+    if (wantListen && Date.now() < listenUntil && restarts < 12) { restarts++; setTimeout(beginRec, 150); }
+    else if (wantListen) stopListening();
+  };
+  try { r.start(); } catch (e) { /* already started */ }
+}
+function stopListening(silent) {
+  const was = wantListen;
+  wantListen = false;
+  clearInterval(tickTimer); tickTimer = null;
+  if (rec) { const r = rec; rec = null; r.onend = () => {}; try { r.stop(); } catch (e) {} }
+  setListenBtn();
+  if (!silent && was) $("#barState").textContent = heard.length ? "Done listening" : "Nothing heard";
+}
+function handleHeard(t) {
+  const n = normZh(t);
+  if (!n || heard.includes(n)) return;
+  heard.push(n);
+  if (n.includes(normZh(WAKE)) || n === normZh(lastCmd)) return; /* the phone's own voice */
+  $("#barText").textContent = t;
+  translateText(t).then((r) => {
+    logEntry({ role: "robot", zh: t, py: r.py || "", en: r.en, src: "listen" });
+    const out = document.getElementById("trOut");
+    if (out) showOut(out, t, r.py || "", r.en, "Heard from the robot · saved to log");
+  });
+}
+async function translateText(zh) {
+  const n = normZh(zh);
+  let best = null;
+  for (const g of PHRASES) for (const p of g.items) {
+    const pn = normZh(p.zh);
+    if (n === pn) return { en: p.en, py: p.py, note: "From the built-in list" };
+    if (n.includes(pn) && (!best || pn.length > normZh(best.zh).length)) best = p;
+  }
+  try {
+    const r = await fetch("https://translate.googleapis.com/translate_a/single?client=gtx&sl=zh-CN&tl=en&dt=t&q=" + encodeURIComponent(zh));
+    const j = await r.json();
+    const t = j[0].map((s) => s[0]).join("").trim();
+    if (t) return { en: t, note: "Translated online" };
+  } catch (e) { /* try the next service */ }
+  try {
+    const r = await fetch("https://api.mymemory.translated.net/get?q=" + encodeURIComponent(zh) + "&langpair=zh-CN%7Cen");
+    const j = await r.json();
+    const t = j && j.responseData && j.responseData.translatedText;
+    if (t && !/MYMEMORY WARNING/i.test(t)) return { en: t, note: "Translated online" };
+  } catch (e) { /* fall through */ }
+  if (best) return { en: best.en + " (partial match)", py: best.py, note: "From the built-in list" };
+  return { en: "(could not translate, check your internet)", note: "Failed" };
+}
+function bindListen() {
+  const a = $("#autoListen"), s = $("#listenSecs");
+  a.checked = store.get("autoListen", "1") === "1";
+  s.value = store.get("listenSecs", "10");
+  const sync = () => { $("#listenOut").textContent = s.value + " s"; };
+  a.addEventListener("change", () => store.set("autoListen", a.checked ? "1" : "0"));
+  s.addEventListener("input", () => { store.set("listenSecs", s.value); sync(); });
+  sync();
+  $("#listenBtn").addEventListener("click", () => {
+    if (wantListen) { stopListening(); return; }
+    stopAll();
+    startListening(listenSecs());
+  });
+  if (!SR) micProblem("This browser has no speech recognition. Open the page in Chrome on Android to hear the robot.", "no-api");
+  else if (!window.isSecureContext) micProblem("The microphone is blocked because this page was opened from storage instead of an https address. Chrome only allows speech recognition on secure pages.", "insecure");
+}
+
+/* ---------- saved log (commands you spoke and robot replies) ---------- */
+let entries = [];
+let logColl = null;
+const LOCAL_KEY = "dvr_log";
+function loadLocalLog() { try { entries = JSON.parse(localStorage.getItem(LOCAL_KEY) || "[]"); } catch (e) { entries = []; } }
+function saveLocalLog() { try { localStorage.setItem(LOCAL_KEY, JSON.stringify(entries.slice(0, 200))); } catch (e) {} }
+function fmtTime(t) {
+  try { return new Date(t).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); } catch (e) { return ""; }
+}
+function updateBarReply() {
+  const el = $("#barReply");
+  const r = entries.find((e) => e.role === "robot");
+  if (!r) { el.hidden = true; return; }
+  el.hidden = false;
+  el.textContent = "Robot: " + r.zh + (r.en ? " · " + r.en : "");
+}
+function afterLogChange() { renderLog(); updateBarReply(); }
+function logEntry(e) {
+  const entry = Object.assign({ t: Date.now(), role: "robot", zh: "", py: "", en: "" }, e);
+  entry.id = "e" + entry.t + Math.random().toString(36).slice(2, 6);
+  if (logColl) {
+    logColl.doc(entry.id).set(entry).catch(() => {
+      logColl = null; loadLocalLog(); entries.unshift(entry); saveLocalLog(); afterLogChange();
+    });
+  } else {
+    entries.unshift(entry); saveLocalLog(); afterLogChange();
+  }
+}
+function removeEntry(id) {
+  if (logColl) logColl.doc(id).delete().catch(() => {});
+  else { entries = entries.filter((e) => e.id !== id); saveLocalLog(); afterLogChange(); }
+}
+async function clearLog() {
+  if (logColl) { for (const e of entries.slice()) { try { await logColl.doc(e.id).delete(); } catch (err) { break; } } }
+  else { entries = []; saveLocalLog(); afterLogChange(); }
+}
+function logAsText() {
+  return entries.slice().reverse().map((e) =>
+    "[" + fmtTime(e.t) + "] " + (e.role === "robot" ? "Robot" : "You") + ": " + e.zh + (e.en ? " (" + e.en + ")" : "")
+  ).join("\n");
+}
+function renderLog() {
+  const box = document.getElementById("logBox");
+  if (!box) return;
+  const list = box.querySelector(".log-list");
+  list.innerHTML = "";
+  box.querySelector(".log-count").textContent = entries.length ? entries.length + " saved" : "";
+  if (!entries.length) {
+    const p = document.createElement("p");
+    p.className = "note"; p.style.padding = "0 14px 14px";
+    p.textContent = "Nothing saved yet. Commands you speak and robot replies you translate or mark as heard appear here.";
+    list.appendChild(p);
+    return;
+  }
+  entries.forEach((e) => {
+    const it = document.createElement("div");
+    it.className = "log-item " + (e.role === "robot" ? "robot" : "you");
+    it.innerHTML = '<div class="log-head"><span class="tag"></span><span class="tm"></span><span class="sp"></span><button type="button" class="x">Delete</button></div><div class="log-zh"></div><div class="log-py"></div><div class="log-en"></div>';
+    const tag = it.querySelector(".tag");
+    tag.textContent = e.role === "robot" ? "Robot said" : "You said";
+    if (e.role !== "robot") tag.classList.add("you");
+    it.querySelector(".tm").textContent = fmtTime(e.t);
+    it.querySelector(".log-zh").textContent = e.zh;
+    it.querySelector(".log-py").textContent = e.py || "";
+    it.querySelector(".log-en").textContent = e.en || "";
+    it.querySelector(".x").addEventListener("click", () => removeEntry(e.id));
+    list.appendChild(it);
+  });
+}
+async function initLog() {
+  loadLocalLog();
+  updateBarReply();
+  try {
+    if (!(window.claude && window.claude.use)) return;
+    const [db, user] = await Promise.all([window.claude.use("db"), window.claude.use("user")]);
+    const uid = user ? await user.id() : null;
+    if (!db || !uid) return;
+    const coll = db.collection("data/users/" + uid);
+    const old = entries.slice();
+    let moved = true;
+    for (const e of old) { try { await coll.doc(e.id).set(e); } catch (err) { moved = false; break; } }
+    if (moved && old.length) { try { localStorage.removeItem(LOCAL_KEY); } catch (err) {} }
+    logColl = coll;
+    coll.orderBy("t", "desc").limit(200).onSnapshot(
+      (snap) => { entries = snap.docs.map((d) => Object.assign({ id: d.id }, d.data())); afterLogChange(); },
+      () => { logColl = null; loadLocalLog(); afterLogChange(); }
+    );
+  } catch (e) { /* stay on local storage */ }
+}
+
+function normZh(s) { return s.replace(/[\s，。,.!！?？、；;：:]/g, ""); }
+function findPhrase(t) {
+  const n = normZh(t);
+  if (!n) return null;
+  for (const g of PHRASES) for (const p of g.items) if (normZh(p.zh) === n) return p;
+  return null;
+}
+function sayPlain(t) {
+  if (!synth) { setNow(t, "Speech not supported here"); return; }
+  stopAll();
+  const my = seq;
+  listenAfter = false;
+  setNow(t, "Speaking");
+  setTimeout(() => runParts([t], 0, my, 0, t), 80);
+}
+function showOut(el, zh, py, en, note) {
+  el.hidden = false;
+  el.innerHTML = '<div class="o-zh"></div><div class="o-py"></div><div class="o-en"></div><div class="o-note"></div>';
+  el.querySelector(".o-zh").textContent = zh || "";
+  el.querySelector(".o-py").textContent = py || "";
+  el.querySelector(".o-en").textContent = en || "";
+  el.querySelector(".o-note").textContent = note || "";
+}
+function renderReply(root) {
+  const box = document.createElement("div");
+  box.className = "panel tr";
+  box.innerHTML = '<div class="field"><label for="trIn">What did the robot say?</label><textarea id="trIn" placeholder="Type or paste Chinese or pinyin, e.g. 我在" autocomplete="off"></textarea></div>' +
+    '<div class="row-btns"><button class="btn primary" type="button" id="trGo">Translate to English</button><button class="btn" type="button" id="trClear">Clear</button></div>' +
+    '<div class="out" id="trOut" hidden></div>' +
+    '<p class="note">The robot\'s replies are picked up by the microphone after each command, or tap Listen to robot at the bottom at any time. You can also type or paste what the robot said here.</p>';
+  root.appendChild(box);
+  const inp = box.querySelector("#trIn"), out = box.querySelector("#trOut");
+  const go = async () => {
+    const text = inp.value.trim();
+    if (!text) return;
+    const hit = findPhrase(text);
+    if (hit) {
+      showOut(out, hit.zh, hit.py, hit.en, "From the built-in list · saved to log");
+      logEntry({ role: "robot", zh: hit.zh, py: hit.py, en: hit.en, src: "list" });
+      return;
+    }
+    if (!(window.claude && window.claude.use)) {
+      showOut(out, text, "", "Translating…", "");
+      const r = await translateText(text);
+      showOut(out, text, r.py || "", r.en, r.note + " · saved to log");
+      logEntry({ role: "robot", zh: text, py: r.py || "", en: r.en, src: "translate" });
+      return;
+    }
+    showOut(out, "", "", "Translating…", "");
+    try {
+      const s = window.claude && window.claude.use ? await window.claude.use("sample") : null;
+      if (!s) { showOut(out, "", "", "Live translation is not available in this view.", "Check the phrase list below."); return; }
+      const prompt = "You translate voice messages spoken by a Dreame robot vacuum from Chinese to English. The input may be Chinese text, pinyin, or imperfect speech-to-text of the robot's voice. Reply in exactly three lines:\nCHINESE: <most likely Chinese text, or the input if it is already Chinese>\nPINYIN: <pinyin with tone marks>\nENGLISH: <short natural English meaning>\nIf the input is unclear, give your best guess and end the ENGLISH line with (unsure).\n\nInput: " + text;
+      const r = await s(prompt, { modelTier: "quick" });
+      const pick = (k) => { const m = new RegExp("^" + k + ":\\s*(.+)$", "mi").exec(r.text || ""); return m ? m[1].trim() : ""; };
+      const en = pick("ENGLISH");
+      if (!en) { showOut(out, "", "", (r.text || "No translation returned.").trim(), ""); return; }
+      const zhT = pick("CHINESE") || text, pyT = pick("PINYIN");
+      showOut(out, zhT, pyT, en, "Translated by Claude · saved to log");
+      logEntry({ role: "robot", zh: zhT, py: pyT, en: en, src: "translate" });
+    } catch (e) {
+      const msg = e && e.code === "not_granted" ? "Translation was not allowed for this page." : e && e.code === "rate_limited" ? "Too many requests. Wait a moment and try again." : "Translation failed. Try again.";
+      showOut(out, "", "", msg, "");
+    }
+  };
+  box.querySelector("#trGo").addEventListener("click", go);
+  box.querySelector("#trClear").addEventListener("click", () => { inp.value = ""; out.hidden = true; inp.focus(); });
+
+  const logBox = document.createElement("section");
+  logBox.className = "panel";
+  logBox.id = "logBox";
+  logBox.style.marginTop = "16px";
+  logBox.innerHTML = '<div class="log-top"><h2>Saved log</h2><span class="log-count"></span></div>' +
+    '<div class="log-actions"><button type="button" class="btn log-copy">Copy log</button><button type="button" class="btn log-save">Save .txt</button><button type="button" class="btn log-clear">Clear all</button><span class="log-status" role="status"></span></div>' +
+    '<div class="log-list"></div>';
+  root.appendChild(logBox);
+  const status = logBox.querySelector(".log-status");
+  logBox.querySelector(".log-copy").addEventListener("click", async () => {
+    const text = logAsText();
+    if (!text) { status.textContent = "Nothing to copy yet."; return; }
+    try { await navigator.clipboard.writeText(text); status.textContent = "Copied."; }
+    catch (e) {
+      let ta = logBox.querySelector("textarea.log-text");
+      if (!ta) { ta = document.createElement("textarea"); ta.className = "log-text"; ta.readOnly = true; ta.style.margin = "0 14px 14px"; ta.style.width = "calc(100% - 28px)"; logBox.insertBefore(ta, logBox.querySelector(".log-list")); }
+      ta.value = text; ta.select(); status.textContent = "Select and copy the text below.";
+    }
+  });
+  logBox.querySelector(".log-save").addEventListener("click", () => {
+    const text = logAsText();
+    if (!text) { status.textContent = "Nothing to save yet."; return; }
+    try {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+      a.download = "dreame-robot-log.txt";
+      document.body.appendChild(a); a.click(); a.remove();
+      status.textContent = "Saved to your Downloads.";
+    } catch (e) { status.textContent = "Could not save a file. Use Copy log."; }
+  });
+  const clr = logBox.querySelector(".log-clear");
+  let armed = null;
+  clr.addEventListener("click", async () => {
+    if (!entries.length) return;
+    if (!armed) {
+      clr.textContent = "Tap again to clear";
+      armed = setTimeout(() => { armed = null; clr.textContent = "Clear all"; }, 4000);
+      return;
+    }
+    clearTimeout(armed); armed = null; clr.textContent = "Clear all";
+    await clearLog();
+  });
+  renderLog();
+
+  const hint = document.createElement("p");
+  hint.className = "note";
+  hint.style.margin = "16px 0 8px";
+  hint.textContent = "Common robot phrases. Tap a phrase to hear it in Mandarin. Tap Heard this when the robot says it, and the English meaning shows above and is saved to the log. Your robot's exact wording may differ.";
+  root.appendChild(hint);
+  PHRASES.forEach((g) => {
+    const sec = document.createElement("section");
+    sec.className = "group panel";
+    const h = document.createElement("h2");
+    h.innerHTML = '<span class="zh"></span><span></span>';
+    h.firstChild.textContent = g.zh; h.lastChild.textContent = g.en;
+    sec.appendChild(h);
+    g.items.forEach((p) => {
+      const wrap = document.createElement("div");
+      wrap.className = "phrase";
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "cmd"; b.dataset.say = p.zh;
+      b.innerHTML = '<span class="mic">' + MIC + '</span><span class="txt"><span class="c-zh"></span><span class="c-py"></span><span class="c-en"></span></span>';
+      b.querySelector(".c-zh").textContent = p.zh;
+      b.querySelector(".c-py").textContent = p.py;
+      b.querySelector(".c-en").textContent = p.en;
+      b.addEventListener("click", () => sayPlain(p.zh));
+      const lb = document.createElement("button");
+      lb.type = "button"; lb.className = "logbtn"; lb.textContent = "Heard this";
+      lb.setAttribute("aria-label", "Robot said " + p.zh + ": show and save");
+      lb.addEventListener("click", () => {
+        showOut(out, p.zh, p.py, p.en, "Saved to log");
+        logEntry({ role: "robot", zh: p.zh, py: p.py, en: p.en, src: "list" });
+        lb.textContent = "Saved";
+        setTimeout(() => { lb.textContent = "Heard this"; }, 1200);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+      wrap.appendChild(b); wrap.appendChild(lb);
+      sec.appendChild(wrap);
+    });
+    root.appendChild(sec);
+  });
+}
+function renderContent() {
+  const root = $("#content");
+  root.innerHTML = "";
+  const tab = TABS.find((t) => t.id === tabId) || TABS[0];
+  if (tab.custom) { renderBuild(root); return; }
+  if (tab.reply) { renderReply(root); return; }
+  tab.groups.forEach((g) => {
+    const sec = document.createElement("section");
+    sec.className = "group panel";
+    const h = document.createElement("h2");
+    h.innerHTML = '<span class="zh"></span><span></span>';
+    h.firstChild.textContent = g.zh; h.lastChild.textContent = g.en;
+    sec.appendChild(h);
+    g.cmds.forEach((c) => sec.appendChild(cmdRow(c)));
+    root.appendChild(sec);
+  });
+  document.querySelectorAll(".cmd").forEach((b) => b.classList.remove("on"));
+}
+
+/* settings */
+function bindSettings() {
+  const pause = $("#pause"), rate = $("#rate"), wake = $("#wake"), voice = $("#voice");
+  pause.value = store.get("pause", "3"); rate.value = store.get("rate", "0.85"); wake.checked = store.get("wake", "1") === "1";
+  const sync = () => {
+    $("#pauseOut").textContent = parseFloat(pause.value).toFixed(1) + " s";
+    $("#rateOut").textContent = parseFloat(rate.value).toFixed(2) + "×";
+    pause.disabled = !wake.checked;
+  };
+  pause.addEventListener("input", () => { store.set("pause", pause.value); sync(); });
+  rate.addEventListener("input", () => { store.set("rate", rate.value); sync(); });
+  wake.addEventListener("change", () => { store.set("wake", wake.checked ? "1" : "0"); sync(); });
+  voice.addEventListener("change", () => { store.set("voice", voice.value); loadVoices(); });
+  sync();
+  $("#testBtn").addEventListener("click", () => {
+    if (!synth) return;
+    stopAll(); const my = seq;
+    setNow("你好追觅，我在这里", "Speaking");
+    setTimeout(() => { const u = makeUtter("你好追觅，我在这里"); keep = u; u.onend = () => { if (my === seq) setNow("你好追觅，我在这里", "Done"); }; synth.speak(u); }, 80);
+  });
+  $("#stopBtn").addEventListener("click", stopAll);
+  $("#replayBtn").addEventListener("click", () => { if (lastCmd) speak(lastCmd); });
+}
+
+bindSettings();
+bindListen();
+$("#toReply").addEventListener("click", () => {
+  tabId = "reply"; store.set("tab", tabId); renderTabs(); renderContent();
+  const t = $("#tabs"); if (t && t.scrollWidth > t.clientWidth) t.scrollLeft = t.scrollWidth;
+  const f = $("#trIn"); if (f) f.focus();
+});
+renderTabs();
+renderContent();
+initLog();
+if (!synth) {
+  const w = $("#noVoice"); w.hidden = false;
+  w.textContent = "This browser view does not support speech. Open the page in Chrome or Safari.";
+  $("#voiceStatus").textContent = "Speech not available.";
+} else {
+  loadVoices();
+  synth.onvoiceschanged = loadVoices;
+  setTimeout(loadVoices, 600);
+  setTimeout(loadVoices, 2000);
+}
+</script>
+</body>
+</html>
